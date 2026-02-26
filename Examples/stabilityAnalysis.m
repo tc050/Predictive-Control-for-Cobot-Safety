@@ -33,10 +33,11 @@ eeRef = getTransform(robotRBT, qRef, endEff);
 % prepare inverse kinematic equations for the rigid body tree
 robot_inverseKinematics = inverseKinematics("RigidBodyTree", robotRBT);
 robot_inverseKinematics.SolverParameters.AllowRandomRestart = false;
-weights = [1 1 1 1 1 1];s
+weights = [1 1 1 1 1 1];
 
 %% generate task-space trajectory
 % end-effector travel distance
+disp(tform2trvec(eeInit))
 dist = norm(tform2trvec(eeInit)- tform2trvec(eeRef));
 
 % define discrete time
