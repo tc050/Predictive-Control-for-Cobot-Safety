@@ -22,3 +22,6 @@ obst_shelf.Pose = trvec2tform([0.5 0 0.65]);
 
 % single element containing all the static obstacles to compress code
 staticObst = {obst_floor, obst_tableTop, obst_tableLeg1, obst_tableLeg2, obst_shelf};
+
+% clear unnecessary variables in workspace
+clearvars obst_floor obst_tableTop obst_tableLeg1 obst_tableLeg2 obst_shelf

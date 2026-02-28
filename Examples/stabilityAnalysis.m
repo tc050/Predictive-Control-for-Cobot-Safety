@@ -94,28 +94,29 @@ for i = 1:length(t)
     poseCurr = getTransform(robotRBT, configCurr, endEff);
     show(robotRBT, configCurr, 'PreservePlot', false, 'Frames', 'off');
     taskSpaceMarker = plot3(poseCurr(1,4), poseCurr(2,4), poseCurr(3,4), 'b.', 'MarkerSize', 20);
+    waypointMarkers = plot3(waypoints(1,4,i), waypoints(2,4,i), waypoints(3,4,i), 'r.', 'MarkerSize', 20);
     drawnow;
 end
 
-% Return to initial configuration
-show(robotRBT, configCurr, 'PreservePlot', false, 'Frames', 'off');
-
-% simulate joint-space
-for i = 1:length(t)
-    % current time
-    tCurr = t(i);
-
-    % interpolate simulated joint positions to get configuration
-    configCurr = interp1(tJoint, stateJoint(:, 1:joint_qty), tCurr)';
-    poseCurr = getTransform(robotRBT, configCurr, endEff);
-    show(robotRBT, configCurr, 'PreservePlot', false, 'Frames', 'off');
-    jointSpaceMarker = plot3(poseCurr(1,4), poseCurr(2,4), poseCurr(3,4), 'r.', 'MarkerSize', 20);
-    drawnow; 
-end
-
-% legends and title
-legend([taskSpaceMarker jointSpaceMarker], {'Defined in Task-Space', 'Defined in Joint-Space'});
-title('Manipulator Trajectories')
+% % Return to initial configuration
+% show(robotRBT, configCurr, 'PreservePlot', false, 'Frames', 'off');
+% 
+% % simulate joint-space
+% for i = 1:length(t)
+%     % current time
+%     tCurr = t(i);
+% 
+%     % interpolate simulated joint positions to get configuration
+%     configCurr = interp1(tJoint, stateJoint(:, 1:joint_qty), tCurr)';
+%     poseCurr = getTransform(robotRBT, configCurr, endEff);
+%     show(robotRBT, configCurr, 'PreservePlot', false, 'Frames', 'off');
+%     jointSpaceMarker = plot3(poseCurr(1,4), poseCurr(2,4), poseCurr(3,4), 'r.', 'MarkerSize', 20);
+%     drawnow; 
+% end
+% 
+% % legends and title
+% legend([taskSpaceMarker jointSpaceMarker], {'Defined in Task-Space', 'Defined in Joint-Space'});
+% title('Manipulator Trajectories')
 
 %%
 % % pre-allocated memory for joint waypoint joint configurations

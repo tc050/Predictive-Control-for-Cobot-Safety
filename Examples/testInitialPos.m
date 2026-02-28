@@ -5,7 +5,7 @@
 endEff = 'EndEffector_Link';
 
 % initial joint positions
-qInit = [90 90 90 90 90 90 90]'*pi/180; % converted from deg to rad
+qInit = [-0.5538; 1.3496; 0.0001; 0.0000; 0.0004; 1.7776; -0.5537]; % converted from deg to rad
 eeInit = getTransform(robotRBT, qInit, endEff); % set initial configuration
 
 % vizualize initial configuration

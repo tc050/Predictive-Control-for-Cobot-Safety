@@ -43,16 +43,13 @@ for i=2:height(task_waypoints)
     end
 
     % update the states of the point positions and velocities
-    q0 = obst_task_state(end,1:7);
-    qd0 = obst_task_state(end,8:end);
+    q0 = obst_task_state(end,:);
+    qd0 = obst_task_state(end,:) * ((timeInterval/numel(obst_task_t_i));
 end
-
-% remove added time stamp at end
-obst_task_t = obst_task_t(1:end-1);
 
 % overall discrete time
 t = (0:st:numel(waypoints)/st);
 timeInterval = [t(1); t(end)];
 
 % clear unnecessary variables in workspace
-clearvars waypoints_i dist_i obst_task_state_i obst_task_t_i q0 qd0  
+clearvars waypoints_i velocities_i dist_i
