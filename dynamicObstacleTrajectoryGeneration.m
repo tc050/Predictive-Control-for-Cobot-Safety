@@ -11,7 +11,9 @@ obst_task_state = [];
 
 
 % compute discrete robot waypoints between primary task waypoints
+tic
 for i=2:height(task_waypoints)
+    disp(toc)
     % distance between waypoint to next
     dist_i = norm(task_waypoints(i-1,:) - task_waypoints(i,:));
     
@@ -24,7 +26,7 @@ for i=2:height(task_waypoints)
 
     % log all waypoints in corresponding matrices
     [~, ~, size_i] = size(waypoints_i);
-    for j=1:size_i
+    parfor j=1:size_i
         waypoints = [waypoints; {waypoints_i(:,:,j)}];
     end
     
@@ -37,7 +39,7 @@ for i=2:height(task_waypoints)
     obst_task_t_i = obst_task_t_i(2:end) + obst_task_t(end);
 
     % log all trajectories and velocities in corresponding matrices
-    for j=1:numel(obst_task_t_i)
+    parfor j=1:numel(obst_task_t_i)
         obst_task_state = [obst_task_state; obst_task_state_i(j,:)];
         obst_task_t = [obst_task_t; obst_task_t_i(j)];
     end
@@ -46,6 +48,7 @@ for i=2:height(task_waypoints)
     q0 = obst_task_state(end,1:7);
     qd0 = obst_task_state(end,8:end);
 end
+disp(toc)
 
 % remove added time stamp at end
 obst_task_t = obst_task_t(1:end-1);
