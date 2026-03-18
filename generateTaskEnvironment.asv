@@ -1,0 +1,64 @@
+function generateTaskEnvironment(robot, initialState, initialToolPosition, finalToolPosition, ...
+    staticObstacles, dynamicObstacle, obstacleTaskWaypoints, waypoints, figureTitle, plotTitle, holdPlot, axis, view)
+    
+    arguments
+        % obligatory args
+        robot {mustBeRigidBodyTree}
+        initialState (7,1) double
+        initialToolPosition (3,1) double
+        finalToolPosition (6,1) double
+        staticObstacles (1,5) cell
+        dynamicObstacle {mustBeRigidBodyTree}
+        obstacleTaskWaypoints (:,7) double
+        waypoints (:,1) cell
+
+        % optional args
+        figureTitle string = 'Figure';
+        plotTitle string = '';
+        holdPlot logical = false;
+        axis Axis = [-0.5 1.5 -1.0 1.0 -0.04 1.3];
+        view View = [-90 10 5];
+    end
+
+    % define figure
+    figure('Name', figureTitle);
+    
+    % robot rigid body tree at the initial joint configuration
+    show(robot, initialState(:, 1), PreservePlot=false, Frames="on");
+    axis(axis)
+    view(view);
+    title(plotTitle)
+    hold on
+    
+    % marker of the starting end-effector position
+    plot3(initialToolPosition(1), initialToolPosition(2), initialToolPosition(3), 'b*', 'MarkerSize', 20);
+    
+    % marker of the final end-effector position
+    plot3(finalToolPosition(1), finalToolPosition(2), finalToolPosition(3), 'g*', 'MarkerSize', 20);
+    
+    % static environment obstacles
+    for i=1:length(staticObstacles)
+        show(staticObstacles{i});
+    end
+    
+    % dynamic obstacle
+    obst_dynamic = show(dynamicObstacle, homeConfiguration(dynamicObstacle), PreservePlot=false, Frames="off", Position=[1 0 0 pi]);
+    for i=1:(joint_qty+1)
+        obst_dynamic.Children(i).FaceColor = 'y';
+    end
+    
+    % obstacle task (primary waypoints and trajectory waypoints)
+    for i=1:height(obstacleTaskWaypoints)
+       task_waypoint_plot = plot3(obstacleTaskWaypoints(i, 1), obstacleTaskWaypoints(i, 2), obstacleTaskWaypoints(i, 3), 'r.', 'MarkerSize', 15);
+       rotate(task_waypoint_plot, [0 0 1], 180)
+    end
+    for i=1:height(obstaclewaypoints)
+        waypoint_plot = plot3(waypoints{i}(1,4), waypoints{i}(2,4), waypoints{i}(3,4), 'y.', 'MarkerSize', 10);
+        rotate(waypoint_plot, [0 0 1], 180)
+    end
+
+    % leave figure open for more plots (such as simulation events)
+    if holdPlot == false
+        hold off
+    end
+end
