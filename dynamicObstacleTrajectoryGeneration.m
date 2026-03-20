@@ -54,8 +54,7 @@ if exist("robotStateAll", "var") == 0
         % find joint rotation and velocity state solutions over discrete steps
         [t,robotState] = ode15s(@(t,state) ...
             timeBasedInput_Task(motionModel, tspan, getTransform(obst_robot,initialState(1:7),"EndEffector_Link"), ...
-                refPose, t, state), ...
-                tspan,initialState);
+                refPose, t, state), tspan,initialState);
     
         % save states
         parfor j=1:height(robotState)

@@ -15,3 +15,6 @@ for i = 1:size(robotStateAll,1)
 end
 
 hold off
+
+% clear unnecessary variables in workspace
+clearvars fps r i
