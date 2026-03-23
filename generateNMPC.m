@@ -44,4 +44,20 @@ Qu = diag([1 1 1 1 1 1 1])/10; % input cost on accelerations
 Qv = diag([1 1 1 1 1 1 1]); % terminal cost on velocities
 
 % custom cost function
+n_mpc.Optimization.CustomCostFcn = @(X,U,e,data) costFunctionNMPC(X,U,data,poseEnd,robotRBT,Qr,Qt,Qu,Qv);
+n_mpc.Optimization.ReplaceStandardCost = true;
+n_mpc.Jacobian.CustomCostFcn = @(X,U,e,data) jacobianCostNMPC(X,U,data,poseEnd,robotRBT,Qr,Qt,Qu,Qv);
 
+%% Inequality Constraints
+% inequality constraint function
+n_mpc.Optimization.CustomIneqConFcn = @(X,U,e,data) inequalityConstraint(X,data,safety_dist,obstacles,robotRBT);
+
+% inequality constraint jacobian
+n_mpc.Jacobian.CustomIneqConFcn = @(X,U,e,data) jacobianInequalityConstraint(X,data,obstacles,robotRBT);
+
+%% Optimization Solver Options
+n_mpc.Optimization.SolverOptions.FunctionTolerance = 0.001;
+n_mpc.Optimization.SolverOptions.StepTolerance = 0.001;
+n_mpc.Optimization.SolverOptions.MaxIter = 5;
+n_mpc.Optimization.SolverOptions.ConstraintTolerance = 0.01;
+n_mpc.Optimization.UseSuboptimalSolution = true;
