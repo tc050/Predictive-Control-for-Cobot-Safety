@@ -1,0 +1,369 @@
+% test if initial static obstacle collision control has been done
+if exist("t", "var") == 0
+    %% --- System of Interest ---
+    [robot, ~] = loadrobot("kinovaGen3", DataFormat="column", Gravity=[0 0 0]);
+    
+    %% --- Environment (static & dynamic) ---
+    % load static collision obstacles of the environment
+    staticObstacleGeneration;
+    
+    % load robot for dynamic collision obstacle
+    [obst_robot_model, ~] = loadrobot("kinovaGen3", DataFormat="column", Gravity=[0 0 0]);
+    
+    base_T = eye(4);
+    base_T(1:3,1:3) = eul2rotm([0 0 0]);
+    base_T(1:3,4) = [0.25 0.25 0]';
+    
+    obst_robot = rigidBodyTree;
+    obst_robot.BaseName = 'redefinedBase';
+    
+    locationBase = rigidBody('locationBase');
+    locationBase.Joint.setFixedTransform(base_T);
+    obst_robot.addBody(locationBase, obst_robot.BaseName);
+    
+    obst_robot.addSubtree('locationBase', obst_robot_model);
+    
+    obst_robot.DataFormat = 'column';
+    obst_robot.Gravity = [0 0 0];
+    
+    %% --- Visualize as collision obstacles and STL files ---
+    % define figure
+    figure('Name', 'Environment Visualization');
+    
+    % robot rigid body tree at the initial joint configuration
+    show(robot, homeConfiguration(robot), PreservePlot=false, Frames="on");
+    title('Environment Visualization')
+    hold on
+    
+    % static environment obstacles
+    for i=1:length(staticObst)
+        show(staticObst{i});
+    end
+    
+    % dynamic obstacle
+    obst_dynamic = show(obst_robot, homeConfiguration(obst_robot), ...
+        PreservePlot=false, Frames="off");
+    for i=1:(numel(homeConfiguration(obst_robot)))
+        obst_dynamic.Children(i).FaceColor = 'c';
+    end
+    
+    hold off
+    view([-31 63])
+    axis([-0.5 0.75 -0.5 0.75 -0.04 1.3]);
+    
+    %% Define Start and End Poses for each robot
+    startPose_robot1 = [0 0.3 0.6 pi/2 pi pi/2]; % X Y Z phi theta psi
+    desiredPose_robot1 = [0.22 -0.4 0.3 -pi 0 0];
+    
+    startPose_robot2 = [-0.1 0.15 0.8 pi/2 -pi/2 0];
+    desiredPose_robot2 = [0.15 -0.2 0.3 0 pi 0];
+    
+    %% Define waypoints for motion of robot 1
+    waypoints_robot1 = [0 0.15 0.6 pi/2 pi pi/2; 
+        0.22 -0.4 0.5 -pi 0 0];
+    
+    %% Task motion for robot 1
+    [planned_path_robot1, states_path_robot1] = RRTstarBased_pathPlanning(robot, staticObst, startPose_robot1, desiredPose_robot1, waypoints_robot1);
+    
+    %% Define waypoints for motion of robot 2
+    waypoints_robot2 = [0.05 0.15 0.8 pi/2 -pi/2 0; 
+        0.15 -0.2 0.5 0 pi 0];
+    
+    %% Task motion for robot 2
+    [planned_path_robot2, states_path_robot2] = RRTstarBased_pathPlanning(obst_robot, staticObst, startPose_robot2, desiredPose_robot2, waypoints_robot2, base_T, true);
+    
+    %% Visualize path-planning
+    % define figure
+    figure('Name', 'Start and Goal')
+    
+    % robot rigid body tree at the initial joint configuration
+    show(robot, homeConfiguration(robot), PreservePlot=false, Frames="on");
+    title('Environment Visualization')
+    hold on
+    
+    % static environment obstacles
+    for i=1:length(staticObst)
+        show(staticObst{i});
+    end
+    
+    % dynamic obstacle
+    obst_dynamic = show(obst_robot, homeConfiguration(obst_robot), ...
+        PreservePlot=false, Frames="off");
+    for i=1:(numel(homeConfiguration(obst_robot)))
+        obst_dynamic.Children(i).FaceColor = 'c';
+    end
+    
+    % display the start and goal points
+    startForRobot1 = scatter3(startPose_robot1(1), startPose_robot1(2), startPose_robot1(3), 100, "green", "filled");
+    plotGridCoordinates(startPose_robot1, 0.1);
+    
+    goalForRobot1 = scatter3(desiredPose_robot1(1), desiredPose_robot1(2), desiredPose_robot1(3), 100, "red", "filled");
+    plotGridCoordinates(desiredPose_robot1, 0.1)
+    
+    startForRobot2 = scatter3(startPose_robot2(1), startPose_robot2(2), startPose_robot2(3), 100, "blue", "filled");
+    plotGridCoordinates(startPose_robot2, 0.1)
+    
+    goalForRobot2 = scatter3(desiredPose_robot2(1), desiredPose_robot2(2), desiredPose_robot2(3), 100, "yellow", "filled");
+    plotGridCoordinates(desiredPose_robot2, 0.1)
+    
+    % display waypoint trajectories
+    for i=1:height(waypoints_robot1)
+       task_waypoint_plot_robot1 = scatter3(waypoints_robot1(i, 1), waypoints_robot1(i, 2), ...
+           waypoints_robot1(i, 3), 50, 'magenta', 'filled');
+       plotGridCoordinates(waypoints_robot1(i, :), 0.1);
+    end
+    for i=1:height(waypoints_robot2)
+       task_waypoint_plot_robot2 = scatter3(waypoints_robot2(i, 1), waypoints_robot2(i, 2), ...
+           waypoints_robot2(i, 3), 50, 'cyan', 'filled');
+       plotGridCoordinates(waypoints_robot2(i, :), 0.1);
+    end
+    
+    % display paths
+    for i=1:height(planned_path_robot1)
+       scatter3(planned_path_robot1(i, 1), planned_path_robot1(i, 2), ...
+           planned_path_robot1(i, 3), 15, 'k', 'filled');
+       plotGridCoordinates(planned_path_robot1(i, :), 0.025);
+    end
+    for i=1:height(planned_path_robot2)
+       scatter3(planned_path_robot2(i, 1), planned_path_robot2(i, 2), ...
+           planned_path_robot2(i, 3), 15, 'k', 'filled');
+       plotGridCoordinates(planned_path_robot2(i, :), 0.025);
+    end
+    
+    legend([startForRobot1, goalForRobot1, startForRobot2, goalForRobot2, task_waypoint_plot_robot1, task_waypoint_plot_robot2], ...
+        'Start: Robot 1', 'End: Robot 1', 'Start: Robot 2', 'End: Robot 2', 'Waypoints Robot 1', 'Waypoints Robot 2')
+    
+    hold off
+    view([-31 63])
+    axis([-0.75 1.0 -0.75 0.75 -0.04 1.3]);
+    
+    %% Generate Trajectories
+    % generate trajectories in trapezoidal velocity profiles for paths to obtain dynamics and time sampling
+    trajectory_robot1 = [generateTraj(planned_path_robot1(1:5,:), robot); 
+        generateTraj(states_path_robot1, robot); 
+        generateTraj(planned_path_robot1(end-5:end,:), robot)];
+    
+    trajectory_robot2 = [generateTraj(planned_path_robot2(1:5,:), obst_robot); 
+        generateTraj(states_path_robot2, obst_robot); 
+        generateTraj(planned_path_robot2(end-5:end,:), obst_robot)];
+    
+    % make sure samples are equal duration of longest sample length
+    if max(height(trajectory_robot1), height(trajectory_robot2)) == height(trajectory_robot1)
+        trajectory_robot2 = [trajectory_robot2; repmat(trajectory_robot2(end,:), height(trajectory_robot1)-height(trajectory_robot2), 1)];
+    else
+        trajectory_robot1 = [trajectory_robot1; repmat(trajectory_robot1(end,:), height(trajectory_robot2)-height(trajectory_robot1), 1)];
+    end
+
+    % split into components
+    q_robot1 = trajectory_robot1(:,1:7);
+    qd_robot1 = trajectory_robot1(:,8:14);
+    qdd_robot1 = trajectory_robot1(:,15:end);
+
+    q_robot2 = trajectory_robot2(:,1:7);
+    qd_robot2 = trajectory_robot2(:,8:14);
+    qdd_robot2 = trajectory_robot2(:,15:end);
+    
+    % discrete time
+    dt = 0.05;
+    t = 0:dt:(height(trajectory_robot1)-1)*dt;
+    t = t';
+end
+
+%% Dynamic Simulation
+% controller gains for computed torque control
+wn = [8.75 8.75 8.75 8.75 3.75 3.75 3.75];
+zeta = 1;
+
+Kp = diag(wn.^2);
+Kd = diag(2*zeta*wn);
+
+% initial states
+q1 = q_robot1(1,:)';
+qd1 = zeros(7,1);
+
+q2 = q_robot2(1,:)';
+qd2 = zeros(7,1);
+
+% visual elements
+figure('Name', 'Simulation Visualization');
+
+hold("on")
+view([-31 63])
+axis([-0.75 1.0 -0.75 0.75 -0.04 1.3]);
+
+title('Environment Visualization')
+
+% robot at initial states
+main_robot = show(robot, q1, PreservePlot=false, Frames="off");
+obst_dynamic = show(obst_robot, q2, PreservePlot=false, Frames="off");
+
+% static environment
+for i=1:length(staticObst)
+    show(staticObst{i});
+end
+
+% display paths
+for i=1:height(planned_path_robot1)
+   scatter3(planned_path_robot1(i, 1), planned_path_robot1(i, 2), ...
+       planned_path_robot1(i, 3), 15, 'k', 'filled');
+   plotGridCoordinates(planned_path_robot1(i, :), 0.025);
+end
+for i=1:height(planned_path_robot2)
+   scatter3(planned_path_robot2(i, 1), planned_path_robot2(i, 2), ...
+       planned_path_robot2(i, 3), 15, 'k', 'filled');
+   plotGridCoordinates(planned_path_robot2(i, :), 0.025);
+end
+
+camlight('right');
+lighting flat;
+material default;
+
+% pre-allocated log variables
+eeTrail1 = zeros(height(t),3);
+eeTrail2 = zeros(height(t),3);
+
+e1_log = zeros(height(t),7);
+ed1_log = zeros(height(t),7);
+e2_log = zeros(height(t),7);
+ed2_log = zeros(height(t),7);
+
+EEe1_log = zeros(height(t),1);
+EEe2_log = zeros(height(t),1);
+
+q_robot1_log = zeros(height(t),7);
+q_robot2_log = zeros(height(t),7);
+
+% initial state of End-Effector trail line
+eeLine1 = plot3(NaN, NaN, NaN, 'r', 'LineWidth', 2);
+eeLine2 = plot3(NaN, NaN, NaN, 'b', 'LineWidth', 2);
+
+% main simulation loop
+r = rateControl(1/dt);
+for k=1:height(t)
+    %% plot end-effector poses
+    p1_T = getTransform(robot, q1, robot.BodyNames{end});
+    p2_T = getTransform(obst_robot, q2, obst_robot.BodyNames{end});
+
+    eeTrail1(k,:) = p1_T(1:3,4)';
+    eeTrail2(k,:) = p2_T(1:3,4)';
+
+    set(eeLine1, ...
+        'XData', eeTrail1(1:k,1), ...
+        'YData', eeTrail1(1:k,2), ...
+        'ZData', eeTrail1(1:k,3));
+    
+    set(eeLine2, ...
+        'XData', eeTrail2(1:k,1), ...
+        'YData', eeTrail2(1:k,2), ...
+        'ZData', eeTrail2(1:k,3));
+    
+    %% desired trajectories of robots at timestep
+    q1_d = q_robot1(k,:)';
+    qd1_d = qd_robot1(k,:)';
+    qdd1_d = qdd_robot1(k,:)';
+
+    q2_d = q_robot2(k,:)';
+    qd2_d = qd_robot2(k,:)';
+    qdd2_d = qdd_robot2(k,:)';
+
+    %% Error Calculations
+    e1 = q1_d - q1;
+    ed1 = qd1_d - qd1;
+
+    e2 = q2_d - q2;
+    ed2 = qd2_d - qd2;
+
+    %% Robot dynamics
+    M1 = massMatrix(robot, q1);
+    C1 = velocityProduct(robot, q1, qd1);
+    G1 = gravityTorque(robot, q1);
+    % viscous friction? or friction assumed ideal?
+
+    M2 = massMatrix(obst_robot, q2);
+    C2 = velocityProduct(obst_robot, q2, qd2);
+    G2 = gravityTorque(obst_robot, q2);
+
+    %% PD / Computed Torque Control
+    V1 = qdd1_d + Kd*ed1 + Kp*e1;
+    tau1 = M1*V1 + C1 + G1;
+
+    V2 = qdd2_d + Kd*ed2 + Kp*e2;
+    tau2 = M2*V2 + C2 + G2;
+
+    %% Forward Dynamics
+    qdd1 = forwardDynamics(robot, q1, qd1, tau1);
+    qdd2 = forwardDynamics(obst_robot, q2, qd2, tau2);
+    
+    %% Logs for plots
+    e1_log(k,:) = e1';
+    ed1_log(k,:) = ed1';
+    e2_log(k,:) = e2';
+    ed2_log(k,:) = ed2';
+
+    p1_d_T = getTransform(robot, q1_d, robot.BodyNames{end});
+    EEe1_log(k,1) = norm(p1_T(1:3,4) - p1_d_T(1:3,4));
+
+    p2_d_T = getTransform(obst_robot, q2_d, obst_robot.BodyNames{end});
+    EEe2_log(k,1) = norm(p2_T(1:3,4) - p2_d_T(1:3,4));
+
+    q_robot1_log(k,:) = q1';
+    q_robot2_log(k,:) = q2';
+
+    %% Integrate
+    qd1 = qd1 + qdd1*dt;
+    q1  = q1  + qd1*dt;
+
+    qd2 = qd2 + qdd2*dt;
+    q2  = q2  + qd2*dt;
+
+    %% Visualization
+    main_robot = show(robot, q1, PreservePlot=false, Frames="off");
+    obst_dynamic = show(obst_robot, q2, PreservePlot=false, Frames="off");
+
+    drawnow;
+    waitfor(r);
+end
+hold off
+
+%% plot simulation results
+% joint errors
+figure('Name', 'Joint Error')
+tiledlayout(2,2);
+nexttile;
+plot(t, e1_log) % joint error robot 1
+title('Joint Error Main Robot')
+nexttile;
+plot(t, e2_log) % joint error robot 2
+title('Joint Error Obstacle Robot')
+nexttile;
+plot(t, ed1_log) % joint vel error robot 1
+title('Joint Velocity Error Main Robot')
+nexttile;
+plot(t, ed2_log) % joint vel error robot 2
+title('Joint Velocity Error Obstacle Robot')
+
+% pose errors
+figure('Name', 'Pose Error')
+tiledlayout(2,1);
+nexttile;
+plot(t, EEe1_log) % joint error robot 1
+title('Pose Error Main Robot')
+nexttile;
+plot(t, EEe2_log) % joint error robot 2
+title('Pose Error Obstacle Robot')
+
+%% Tuning the Computed Torque Controller
+figure('Name', 'Joint Tuning')
+tiledlayout(2,1);
+nexttile;
+plot(t, q_robot1_log(:,1)) % joints robot 1
+hold on
+plot(t, q_robot1(:,1)) % joint reference robot 1
+title('Joint 1 Reaction Robot 1')
+hold off
+nexttile;
+plot(t, q_robot2_log(:,1)) % joint robot 2
+hold on
+plot(t, q_robot2(:,1)) % joint reference robot 2
+title('Joint 1 Reaction Robot 2')
+hold off
