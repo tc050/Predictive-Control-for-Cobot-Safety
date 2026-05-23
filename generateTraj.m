@@ -1,16 +1,11 @@
-function trajectory = generateTraj(waypoints, robot)
-    if size(waypoints, 2) == 6
-        joint_waypoints = taskToJointWaypoints(waypoints, robot); % waypoints input in task-space
-    else
-        joint_waypoints = waypoints; % waypoints input in joint-space
-    end
-
+function trajectory = generateTraj(joint_waypoints)
     % generate trajectory on joints implementing velocity constaints
-    %joint_velocity_limits = [1.39; 1.39; 1.39; 1.39; 1.22; 1.22; 1.22]; % KinovaGen3 speed general limits
-    joint_velocity_limits = [0.75; 0.75; 0.75; 0.75; 0.5; 0.5; 0.5];
+    scale = 0.5; % limit to 50% of maximum speed limit
+    joint_velocity_limits = [1.39*scale; 1.39*scale; 1.39*scale; 1.39*scale; 1.22*scale; 1.22*scale; 1.22*scale]; % KinovaGen3 speed general limits
 
     % generate trajectory using trapezoidal velocity profiles
-    [q_traj, qd_traj, qdd_traj, T, ~] = trapveltraj(joint_waypoints', size(joint_waypoints,1), PeakVelocity=joint_velocity_limits);
+    sample_resolution = 10;
+    [q_traj, qd_traj, qdd_traj, T, ~] = trapveltraj(joint_waypoints', size(joint_waypoints,1)*sample_resolution, PeakVelocity=joint_velocity_limits);
 
     % extablish discrete time
     dt = 0.05; % time step
