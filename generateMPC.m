@@ -41,9 +41,6 @@ mpc_obj.PredictionHorizon = 10; % length of predictions
 mpc_obj.ControlHorizon = 3; % length of control solutions
 
 %% Constraints
-joint_velocity_limits = [1.39; 1.39; 1.39; 1.39; 1.22; 1.22; 1.22]; % KinovaGen3 speed general limits
-joint_acceleration_limits = [5.2; 5.2; 5.2; 5.2; 10.0; 10.0; 10.0]; % KinovaGen3 acceleration hard limits
-
 % joint constraints
 for i=1:q_qty
     % OV
@@ -60,3 +57,15 @@ for i=1:q_qty
     mpc_obj.ManipulatedVariables(i).Min = -joint_acceleration_limits(i);
     mpc_obj.ManipulatedVariables(i).Max = joint_acceleration_limits(i);
 end
+
+%% Cost Function Weight Matrices
+Q = [8 8 8 8 5 5 5 2 2 2 2 2 2 2];
+%Q = ones(1,14);
+R = ones(1,7)*0.05;
+%R = ones(1,7)*0.1;
+Rd = ones(1,7)*0.1;
+%Rd = zeros(1,7);
+
+mpc_obj.Weights.OutputVariables = Q; % joint position and velocity tracking weight
+mpc_obj.Weights.ManipulatedVariables = R; % control effort weight
+mpc_obj.Weights.ManipulatedVariablesRate = Rd; % smoothness weight

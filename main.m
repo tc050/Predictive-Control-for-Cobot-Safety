@@ -1,14 +1,14 @@
 % test if initial static obstacle collision control has been done
 if exist("t", "var") == 0
     %% --- System of Interest ---
-    [robot, ~] = loadrobot("kinovaGen3", DataFormat="column", Gravity=[0 0 0]);
+    [robot, ~] = loadrobot("kinovaGen3", DataFormat="column", Gravity=[0 0 -9.81]);
     
     %% --- Environment (static & dynamic) ---
     % load static collision obstacles of the environment
     staticObstacleGeneration;
     
     % load robot for dynamic collision obstacle
-    [obst_robot_model, ~] = loadrobot("kinovaGen3", DataFormat="column", Gravity=[0 0 0]);
+    [obst_robot_model, ~] = loadrobot("kinovaGen3", DataFormat="column", Gravity=[0 0 -9.81]);
     modifyBaseLoc;
     
     %% --- Visualize as collision obstacles and STL files ---
@@ -136,9 +136,37 @@ if exist("t", "var") == 0
 end
 
 %% simulate three comparative controllers
-controllers = ["SSM","PID","MPC"];
-compTimes = zeros(length(controllers),1);
-min_separation = zeros(length(controllers),1);
+controllers = ["MPC"]; %["SSM","PID","MPC"];
+
+% quantitative metric data collection
+min_separation = zeros(length(controllers),1); % lowest separation distance (least safe proximity)
+mean_separation = zeros(length(controllers),1); % average distance
+violation_qty = zeros(length(controllers),1); % number of violations of safety distance
+jointPosViolation_qty = zeros(length(controllers),1); % quantity of violations to joint position limits
+jointVelViolation_qty = zeros(length(controllers),1); % quantity of violations to joint velocity limits
+mean_controlEffort = zeros(length(controllers),1); % average speed scale limiting effect
+std_controlEffort = zeros(length(controllers),1); % consistency of speed scaling
+compTimes = zeros(length(controllers),1); % task time productivity
+mean_trackingError = zeros(length(controllers),1); % mean RMSE of End-Effector tracking
+max_trackingError = zeros(length(controllers),1); % highest RMSE of End-Effector tracking
+
+% computational and real-time cost data collection
+totalComputation = zeros(length(controllers),1); % total computation time
+P95_coputationTime = zeros(length(controllers),1); % high average overhead for safety controller
+mean_computationTime = zeros(length(controllers),1); % average time to compute safety controller
+
+% save pos, vel, and acc limits for joints
+q_qty = 7;
+joint_position_limits = zeros(length(q_qty),1);
+for i=1:q_qty
+    joint_position_limits(i) = robot.Bodies{1, i}.Joint.PositionLimits(2); % max as absolute
+end
+joint_velocity_limits = [1.39; 1.39; 1.39; 1.39; 1.22; 1.22; 1.22]; % KinovaGen3 speed general limits
+joint_acceleration_limits = [5.2; 5.2; 5.2; 5.2; 10.0; 10.0; 10.0]; % KinovaGen3 acceleration hard limits
+
+% optional MPC uncertainty injection
+uncertainty = true; % manually modify
+load = 0.1; % maximum uncertainty [m]
 
 for c = 1:length(controllers)
     %% Select Corresponding Controller
@@ -154,10 +182,23 @@ for c = 1:length(controllers)
     
     % create MPC object
     if contType == "MPC"
-        qdd2_prev = 0; % previous timestep obstacle acceleration
-
         generateMPC;
         safety_th = 0.25; % safety threshold distance
+
+        % define handle of current controller state
+        xc = mpcstate(mpc_obj);
+    
+        % set initial previous cost function weight scaling
+        Q_scalePrev = 0;
+        Rd_scalePrev = 0;
+
+        % log risks
+        risk_log = zeros(height(t),1);
+
+        % log ground truth when there is uncertainty
+        if uncertainty == true
+            groundTruth_log = zeros(height(t),1);
+        end
     end
     
     % initialize parameters and variables for PID safety control
@@ -187,7 +228,7 @@ for c = 1:length(controllers)
     view([-45 45])
     axis([-0.75 1.0 -0.75 0.75 -0.04 1.3]);
     
-    title('Environment Visualization')
+    title("Simulation of " + contType + " Safety Controller")
     
     % robot at initial states
     main_robot = show(robot, q1, PreservePlot=false, Frames="off");
@@ -220,10 +261,15 @@ for c = 1:length(controllers)
     q_robot1_log = zeros(height(t),7);
     q_robot2_log = zeros(height(t),7);
     
+    % violation counters
+    jointPosViolation_qty(c) = 0;
+    jointVelViolation_qty(c) = 0;
+    
     % Safety-related logs
     d_min_log = zeros(height(t),1);
     S_log = zeros(height(t),1);
     speedScale_log = zeros(height(t),1);
+    safetyTime = zeros(height(t),1);
     
     % initial state of End-Effector trail line
     eeLine1 = plot3(NaN, NaN, NaN, 'r', 'LineWidth', 2);
@@ -231,6 +277,7 @@ for c = 1:length(controllers)
     
     % main simulation loop
     r = rateControl(1/dt);
+    tic
     for k=1:height(t)
         %% plot end-effector poses
         p1_T = getTransform(robot, q1, robot.BodyNames{end});
@@ -253,6 +300,8 @@ for c = 1:length(controllers)
         [q1_d, qd1_d, qdd1_d] = referenceJoints(k, q_robot1, qd_robot1, qdd_robot1);
         [q2_d, qd2_d, qdd2_d] = referenceJoints(k, q_robot2, qd_robot2, qdd_robot2);
     
+        %% Safety Control
+        startSafety = tic;
         %% Speed and Separation Monitoring [SSM] (Mid-Level Safety Control)
         if contType == "SSM"
             [d_min, v_rel, closestJoints] = monitorRobotSeparation(robot, q1, qd1, obst_robot, q2, qd2);
@@ -267,40 +316,109 @@ for c = 1:length(controllers)
     
         %% MPC-enhanced SSM (Mid-Level Safety Control)
         if contType == "MPC"
-            % predict obstacle robot trajectory over horizon
+            % predict separation distance over horizon
             obst_q_pred = zeros(mpc_obj.PredictionHorizon, 7);
-    
+            obst_qd_pred = zeros(mpc_obj.PredictionHorizon, 7);
+            robot_q_pred = zeros(mpc_obj.PredictionHorizon, 7); 
+            robot_qd_pred = zeros(mpc_obj.PredictionHorizon, 7); 
+            future_d_min = zeros(mpc_obj.PredictionHorizon, 1);
+
+            % weighted average on collision horizon (closest highest risk)
+            riskWeights = zeros(mpc_obj.PredictionHorizon, 1);
+            groundTruth_d_min = zeros(mpc_obj.PredictionHorizon, 1);
+            
             for i=1:mpc_obj.PredictionHorizon
-                % simplified dynamics / constant velocity and acceleration prediction
-                obst_q_pred(i,:) = q2 + qd2*i*dt + 0.5*qdd2_prev*(i*dt)^2;
+                % robot state prediction
+                robot_predID = min(k+i, size(q_robot1,1));
+                robot_q_pred(i,:) = q_robot1(robot_predID,:);
+                robot_qd_pred(i,:) = qd_robot1(robot_predID,:);
+
+                % obstacle state prediction
+                obst_predID = min(k+i, size(q_robot2,1));
+                obst_q_pred(i,:) = q_robot2(obst_predID,:);
+                obst_qd_pred(i,:) = qd_robot2(obst_predID,:);
+
+                % find ground true in uncertainty scenarios
+                if uncertainty == true
+                    [groundTruth_d_min(i), ~, ~] = monitorRobotSeparation(robot, ...
+                        robot_q_pred(i,:)', robot_qd_pred(i,:)', obst_robot, ...
+                        obst_q_pred(i,:)', obst_qd_pred(i,:)');
+                end
+
+                % uncertainty injection
+                if uncertainty == true
+                    noiseScale = load * sqrt(i); % increased noise as horizon extends
+                    obst_q_pred(i,:) = obst_q_pred(i,:) + noiseScale * (randn(1,7) + 0.5);
+                    obst_qd_pred(i,:) = obst_qd_pred(i,:) + (noiseScale/dt) * (randn(1,7) + 0.5);
+                end
+
+                % monitor separation across horizon
+                [future_d_min(i), ~, ~] = monitorRobotSeparation(robot, ...
+                    robot_q_pred(i,:)', robot_qd_pred(i,:)', obst_robot, ...
+                    obst_q_pred(i,:)', obst_qd_pred(i,:)');
+
+                % risk weighting
+                if i < mpc_obj.PredictionHorizon/2
+                    riskWeights(i) = 1;
+                elseif i < (mpc_obj.PredictionHorizon/2 + mpc_obj.PredictionHorizon/4)
+                    riskWeights(i) = 0.5;
+                else
+                    riskWeights(i) = 0.2;
+                end
             end
             
-            [d_min, v_rel, closestJoints] = monitorRobotSeparation(robot, q1, qd1, obst_robot, q2, qd2);
+            % identify closest separation distance
+            d_min = min(future_d_min);
+
+            % identify risk by horizon weight
+            risk = sum(riskWeights .* max(0, safety_th - future_d_min) ./ safety_th) / sum(riskWeights);
         
             if d_min <= safety_th
-                speedScale = max(0.1, d_min/safety_th);
+                speedScale = max(0.1, 1 - risk);
                 
                 % scale constraints
                 for i=1:q_qty
                     mpc_obj.OutputVariables(q_qty+i).Min = -speedScale*joint_velocity_limits(i);
                     mpc_obj.OutputVariables(q_qty+i).Max = speedScale*joint_velocity_limits(i);
                 end
+            else
+                % reset velocity constraints to normal values
+                for i=1:q_qty
+                    mpc_obj.OutputVariables(q_qty+i).Min = -joint_velocity_limits(i);
+                    mpc_obj.OutputVariables(q_qty+i).Max = joint_velocity_limits(i);
+                end
             end
+
+            % Cost Function Weight Scaling
+            Q_scale = 1 + 5.0*risk;
+            Q_scaleFiltered = 0.5 * Q_scalePrev + 0.5 * Q_scale; % prevent harsh scaling
+            
+            Rd_scale = max(0.2, 1 - 0.7*risk);
+            Rd_scaleFiltered = 0.5 * Rd_scalePrev + 0.5 * Rd_scale;
+
+            mpc_obj.Weights.OutputVariables = Q * Q_scaleFiltered; % joint position and velocity tracking weight
+            mpc_obj.Weights.ManipulatedVariablesRate = Rd * Rd_scaleFiltered; % smoothness weight
     
             % MPC timestep state
             ym = [q1; qd1]; % current measured outputs
             y_ref = [q1_d; qd1_d]; % output references
     
-            % define handle of current controller state
-            xc = mpcstate(mpc_obj);
-    
             % online MPC computation
             u_out = mpcmove(mpc_obj, xc, ym, y_ref);
-
-            % track previous acceleration for derivatives
-            qdd2_prev = qdd2;
     
             qdd1_d = u_out;
+
+            % save previous cost function scales for filtering
+            Q_scalePrev = Q_scaleFiltered;
+            Rd_scalePrev = Rd_scaleFiltered;
+
+            % log risk
+            risk_log(k) = risk;
+            
+            % log ground truth if there is uncertainty
+            if uncertainty == true
+                groundTruth_log(k) = min(groundTruth_d_min);
+            end
         end
     
         %% PID-enhanced SSM (Mid-level Safety Control)
@@ -309,6 +427,9 @@ for c = 1:length(controllers)
     
             % compute current error
             e = safety_th - d_min;
+
+            % track accumulate error
+            e_acc = e_acc + e*dt;
     
             % safety PID
             u_ssm = Kp_ssm*e + Ki_ssm*(e_acc + e*dt) + Kd_ssm*(e - e_prev)/dt;
@@ -329,6 +450,7 @@ for c = 1:length(controllers)
             % track previous error for derivatives
             e_prev = e;
         end
+        safetyTime(k) = toc(startSafety);
     
         %% Error Calculations
         [e1, ed1, e1_log, ed1_log] = calcError(k, q1, qd1, q1_d, qd1_d, e1_log, ed1_log);
@@ -354,6 +476,16 @@ for c = 1:length(controllers)
     
         % distance to end goal
         EE_to_end_log(k) = rms(p1_T(1:3,4) - desiredPose_robot1(1:3)'); % RMSE
+
+        % joint position voilations
+        for j = 1:q_qty
+            if q1(j) < -joint_position_limits(j) || q1(j) > joint_position_limits(j)
+                jointPosViolation_qty(c) = jointPosViolation_qty(c) + 1;
+            end % joint velocity violations
+            if qd1(j) < -joint_velocity_limits(j) || qd1(j) > joint_velocity_limits(j)
+                jointVelViolation_qty(c) = jointVelViolation_qty(c) + 1;
+            end
+        end
     
         %% integration joint update
         [q1, qd1] = updateJoints(q1, qd1, qdd1, dt);
@@ -366,6 +498,7 @@ for c = 1:length(controllers)
         drawnow;
         %waitfor(r);
     end
+    simTime = toc;
     hold off
     
     %% find completion time
@@ -379,8 +512,25 @@ for c = 1:length(controllers)
         compTimes(c) = t(end);
     end
 
-    %% return lowest separation distance (least safe proximity)
+    %% collect metric data
+    % quantitative metric data collection
     min_separation(c) = min(d_min_log);
+    mean_separation(c) = mean(d_min_log); 
+    violation_qty(c) = sum(d_min_log < S_log); 
+    if uncertainty == true && contType == "MPC"
+        min_separation(c) = min(groundTruth_log);
+        mean_separation(c) = mean(groundTruth_log); 
+        violation_qty(c) = sum(groundTruth_log < S_log); 
+    end
+    mean_controlEffort(c) = mean(speedScale_log);
+    std_controlEffort(c) = std(speedScale_log); 
+    mean_trackingError(c) = mean(EEe1_log); 
+    max_trackingError(c) = max(EEe1_log); 
+
+    % computational and real-time cost data collection
+    totalComputation(c) = simTime; 
+    P95_coputationTime(c) = prctile(safetyTime,95);
+    mean_computationTime(c) = mean(safetyTime); 
     
     %% plot simulation results
     % joint errors
@@ -417,10 +567,21 @@ for c = 1:length(controllers)
     hold on
     plot(t, S_log) % safety distance
     legend('Minimum Distance', 'Safety Distance')
+    if uncertainty == true && contType == "MPC"
+        plot(t, groundTruth_log) % ground trueth minimum body distance
+        legend('Minimum Distance', 'Safety Distance', 'Ground Truth Distance')
+    end
     title('Speed and Separation Monitoring')
     nexttile;
     plot(t, speedScale_log) % scale applied by control to robot speed 
     title('Velocity Scaling')
+
+    % MPC risk values
+    if contType == "MPC"
+        figure('Name', 'MPC Collision Risk Measurement over Horizon')
+        plot(t, risk_log)
+        title('MPC Collision Risk over Horizon Measurement')
+    end
 end
 
 % Task Productivity Comparison
@@ -450,10 +611,43 @@ colors = [
 hold on
 for i = 1:length(controllers)
     scatter(compTimes(i), min_separation(i), 150, colors(i,:), 'filled')
-    text(compTimes(i)+0.1, min_separation(i), controllers(i), ...
+    text(compTimes(i)+0.01, min_separation(i), controllers(i), ...
          'FontSize', 12, 'FontWeight', 'bold');
 end
 title('Safety-Productivity Trafe-off Pareto Analysis')
 xlabel('Task Completion Time [s]')
 ylabel('Minimum Separation Distance [m]')
 grid on
+
+%% log table of metric data
+ResultsTable = table( ...
+    min_separation, ...
+    mean_separation, ...
+    violation_qty, ...
+    jointPosViolation_qty, ...
+    jointVelViolation_qty, ...
+    mean_controlEffort, ...
+    std_controlEffort, ...
+    compTimes, ...
+    mean_trackingError, ...
+    max_trackingError, ...
+    totalComputation, ...
+    P95_coputationTime, ...
+    mean_computationTime,...
+    'VariableNames', { ...
+        'Minimum Separation [m]', ...
+        'Mean Separation [m]', ...
+        'Distance Violation Quantity', ...
+        'Joint Position Violation Quantity', ...
+        'Joint Velocity Violation Quantity', ...
+        'Mean Control Effort', ...
+        'Std Control Effort', ...
+        'Time to Reach Goal [s]', ...
+        'Mean Tracking Error [m]', ...
+        'Maximum Tracking Error [m]',...
+        'Simulation Computation Time [s]', ...
+        'P95 Controller Computation Time [s]', ...
+        'Mean Controller Computation Time [s]'} ...
+);
+
+writetable(ResultsTable, 'MetricResults.csv');
